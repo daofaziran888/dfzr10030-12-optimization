@@ -20,7 +20,9 @@ export default defineConfig({
     open: false,
     strictPort: false,
     proxy: {
-      '/api': {
+      // 用带边界的正则键：仅 /api 与 /api/... 走代理，
+      // 避免字符串前缀匹配把同名业务路由 /apiclient 也转发到后端导致 404。
+      '^/api(?:/|$)': {
         target: proxyTarget,
         changeOrigin: true,
       },

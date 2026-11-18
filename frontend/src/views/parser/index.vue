@@ -72,6 +72,33 @@
       </form>
     </div>
 
+    <section class="recovery-panel" data-testid="parser-recovery-panel" style="margin-top:18px">
+      <h3 style="font-size:15px;margin:0 0 8px">通道恢复偏移及续传清单（格式解析服务入口）</h3>
+      <p class="page-desc">解析服务按续传清单只读取未完成分片生成字段包，核对清单并把可用状态同步给数据接入通道；清单状态变化会联动更新待核对台账。</p>
+      <div class="page-actions" style="margin-bottom:8px">
+        <RouterLink class="btn" to="/recovery">前往生成续传清单并回写台账</RouterLink>
+        <button class="btn ghost" type="button" data-testid="parser-reload-recovery" @click="loadRecovery">刷新清单状态</button>
+      </div>
+      <table class="data-table">
+        <thead><tr><th>清单编号</th><th>通道</th><th>恢复做法</th><th>失败/恢复偏移</th><th>字段包</th><th>清单状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="m in recoveryManifests" :key="m.manifest_id" :data-testid="`parser-manifest-${m.manifest_id}`">
+            <td>{{ m.manifest_id }}</td>
+            <td>{{ m.channel_code }}</td>
+            <td>{{ m.strategy_label }}</td>
+            <td>{{ m.fail_offset }} / {{ m.recovery_offset }}</td>
+            <td>{{ (m.field_packages || []).length }}</td>
+            <td>{{ m.status }}</td>
+            <td class="row-actions">
+              <button class="link" type="button" :data-testid="`parser-packages-${m.manifest_id}`" @click="parserAction(m, 'field-packages')">生成字段包</button>
+              <button class="link" type="button" :data-testid="`parser-reconcile-${m.manifest_id}`" @click="parserAction(m, 'reconcile')">核对并同步通道</button>
+            </td>
+          </tr>
+          <tr v-if="!recoveryManifests.length"><td colspan="7" class="empty-state">暂无续传清单</td></tr>
+        </tbody>
+      </table>
+    </section>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条格式解析器记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -100,6 +127,28 @@ const filterFields = columns.slice(0, 3)
 const showCreate = ref(false)
 const creating = ref(false)
 const createValues = ref<Record<string, string>>({})
+const recoveryManifests = ref<Record<string, any>[]>([])
+
+async function loadRecovery() {
+  try {
+    const response = await request('/api/recovery/manifests')
+    if (response.ok) recoveryManifests.value = (await response.json()).items ?? []
+  } catch {
+    recoveryManifests.value = []
+  }
+}
+
+async function parserAction(manifest: Record<string, any>, action: string) {
+  errorMessage.value = ''
+  try {
+    const response = await request(`/api/recovery/manifests/${manifest.manifest_id}/${action}`, { method: 'POST', body: '{}' })
+    const payload = await response.json()
+    if (!response.ok || !payload.ok) throw new Error(payload.message || '操作失败')
+    await loadRecovery()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '解析服务操作失败'
+  }
+}
 const stats = computed(() => [
   { label: metricNames[0], value: total.value },
   { label: metricNames[1], value: rows.value.filter((row) => row.status === statuses[1]).length },
@@ -184,5 +233,8 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  reload()
+  loadRecovery()
+})
 </script>
